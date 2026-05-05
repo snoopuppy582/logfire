@@ -107,6 +107,11 @@ from .logs import ProxyLoggerProvider
 from .metrics import ProxyMeterProvider
 from .scrubbing import NOOP_SCRUBBER, BaseScrubber, Scrubber, ScrubbingOptions
 from .stack_info import warn_at_user_stacklevel
+from .telemetry_header import (
+    TELEMETRY_HEADER_NAME,
+    build_telemetry_header,
+    install_logfire_response_hook,
+)
 from .tracer import OPEN_SPANS, PendingSpanProcessor, ProxyTracerProvider
 from .utils import (
     SeededRandomIdGenerator,
@@ -1125,10 +1130,16 @@ class LogfireConfig(_LogfireConfigData):
                         thread.start()
 
                     # Create exporters for each token
+                    telemetry_header_value = build_telemetry_header(self)
                     for token in token_list:
                         base_url = self.advanced.generate_base_url(token)
-                        headers = {'User-Agent': f'logfire/{VERSION}', 'Authorization': token}
+                        headers = {
+                            'User-Agent': f'logfire/{VERSION}',
+                            'Authorization': token,
+                            TELEMETRY_HEADER_NAME: telemetry_header_value,
+                        }
                         session = OTLPExporterHttpSession()
+                        install_logfire_response_hook(session)
                         span_exporter = BodySizeCheckingOTLPSpanExporter(
                             endpoint=urljoin(base_url, '/v1/traces'),
                             session=session,
@@ -1453,7 +1464,11 @@ class LogfireConfig(_LogfireConfigData):
             )
 
     def _initialize_credentials_from_token(self, token: str) -> LogfireCredentials | None:
-        return LogfireCredentials.from_token(token, requests.Session(), self.advanced.generate_base_url(token))
+        session = requests.Session()
+        install_logfire_response_hook(session)
+        return LogfireCredentials.from_token(
+            token, session, self.advanced.generate_base_url(token), telemetry_header=build_telemetry_header(self)
+        )
 
     def _ensure_flush_after_aws_lambda(self):
         """Ensure that `force_flush` is called after an AWS Lambda invocation.
@@ -1601,7 +1616,9 @@ class LogfireCredentials:
                 raise LogfireConfigError(f'Invalid credentials file: {path} - {e}') from e
 
     @classmethod
-    def from_token(cls, token: str, session: requests.Session, base_url: str) -> Self | None:
+    def from_token(
+        cls, token: str, session: requests.Session, base_url: str, telemetry_header: str | None = None
+    ) -> Self | None:
         """Check that the token is valid.
 
         Issue a warning if the Logfire API is unreachable, or we get a response other than 200 or 401.
@@ -1611,11 +1628,14 @@ class LogfireCredentials:
         Raises:
             LogfireConfigError: If the token is invalid.
         """
+        headers: dict[str, str] = {**COMMON_REQUEST_HEADERS, 'Authorization': token}
+        if telemetry_header is not None:
+            headers[TELEMETRY_HEADER_NAME] = telemetry_header
         try:
             response = session.get(
                 urljoin(base_url, '/v1/info'),
                 timeout=10,
-                headers={**COMMON_REQUEST_HEADERS, 'Authorization': token},
+                headers=headers,
             )
         except requests.RequestException as e:
             warnings.warn(f'Logfire API is unreachable, you may have trouble sending data. Error: {e}')
