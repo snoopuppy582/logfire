@@ -1136,7 +1136,7 @@ class LogfireConfig(_LogfireConfigData):
                         thread.start()
 
                     # Create exporters for each token
-                    telemetry_header_value = build_telemetry_header(self, service_instance_id=self._service_instance_id)
+                    telemetry_header_value = build_telemetry_header(self)
                     for token in token_list:
                         base_url = self.advanced.generate_base_url(token)
                         headers = {
@@ -1322,7 +1322,7 @@ class LogfireConfig(_LogfireConfigData):
                     base_url=base_url,
                     token=self.api_key,
                     options=self.variables,
-                    telemetry_header=build_telemetry_header(self, service_instance_id=self._service_instance_id),
+                    telemetry_header=build_telemetry_header(self),
                 )
             multi_log_processor = SynchronousMultiLogRecordProcessor()
             for processor in log_record_processors:
@@ -1455,7 +1455,7 @@ class LogfireConfig(_LogfireConfigData):
                 base_url=base_url,
                 token=api_key,
                 options=options,
-                telemetry_header=build_telemetry_header(self, service_instance_id=self._service_instance_id),
+                telemetry_header=build_telemetry_header(self),
             )
             self._variable_provider = provider
             provider.start(Logfire(config=self))
@@ -1478,7 +1478,7 @@ class LogfireConfig(_LogfireConfigData):
             token,
             session,
             self.advanced.generate_base_url(token),
-            telemetry_header=build_telemetry_header(self, service_instance_id=self._service_instance_id),
+            telemetry_header=build_telemetry_header(self),
         )
 
     def _ensure_flush_after_aws_lambda(self):

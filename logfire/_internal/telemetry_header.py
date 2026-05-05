@@ -27,7 +27,7 @@ from logfire.exceptions import LogfireServerError, LogfireServerWarning
 from logfire.version import VERSION
 
 if TYPE_CHECKING:
-    from .config import _LogfireConfigData  # pyright: ignore[reportPrivateUsage]
+    from .config import LogfireConfig
 
 
 TELEMETRY_HEADER_NAME = 'X-Logfire-Telemetry'
@@ -61,8 +61,8 @@ def _base_telemetry_pairs() -> dict[str, str]:
     }
 
 
-def _config_telemetry_pairs(config: _LogfireConfigData) -> dict[str, str]:
-    """Pick fields of `_LogfireConfigData` that are useful for product analytics.
+def _config_telemetry_pairs(config: LogfireConfig) -> dict[str, str]:
+    """Pick fields of `LogfireConfig` that are useful for product analytics.
 
     Each field below has an explicit rationale; do not add a field unless you have
     one. Everything else either duplicates information the server already knows,
@@ -90,21 +90,22 @@ def _config_telemetry_pairs(config: _LogfireConfigData) -> dict[str, str]:
         token_count = 0
     pairs['token_count'] = _format_value(token_count)
 
-    return pairs
-
-
-def build_telemetry_header(config: _LogfireConfigData | None = None, *, service_instance_id: str = '') -> str:
-    """Return the `key=val,key2=val` value for the `X-Logfire-Telemetry` header."""
-    pairs = _base_telemetry_pairs()
-    if config is not None:
-        pairs.update(_config_telemetry_pairs(config))
-    if service_instance_id:
+    if config._service_instance_id:  # pyright: ignore[reportPrivateUsage]
         # Mirrors the OTLP resource attribute of the same name
         # (https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/#service-instance-id).
         # Carrying it on the header lets the backend correlate metadata with the spans
         # this SDK instance is exporting, even on requests that don't carry an OTLP body
         # (token validation, variables fetch, CRUD endpoints).
-        pairs['service_instance_id'] = service_instance_id
+        pairs['service_instance_id'] = config._service_instance_id  # pyright: ignore[reportPrivateUsage]
+
+    return pairs
+
+
+def build_telemetry_header(config: LogfireConfig | None = None) -> str:
+    """Return the `key=val,key2=val` value for the `X-Logfire-Telemetry` header."""
+    pairs = _base_telemetry_pairs()
+    if config is not None:
+        pairs.update(_config_telemetry_pairs(config))
     return ','.join(f'{key}={value}' for key, value in pairs.items())
 
 
