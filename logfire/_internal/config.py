@@ -107,11 +107,7 @@ from .logs import ProxyLoggerProvider
 from .metrics import ProxyMeterProvider
 from .scrubbing import NOOP_SCRUBBER, BaseScrubber, Scrubber, ScrubbingOptions
 from .stack_info import warn_at_user_stacklevel
-from .telemetry_header import (
-    TELEMETRY_HEADER_NAME,
-    build_telemetry_header,
-    install_logfire_response_hook,
-)
+from .telemetry_header import TELEMETRY_HEADER_NAME, build_telemetry_header
 from .tracer import OPEN_SPANS, PendingSpanProcessor, ProxyTracerProvider
 from .utils import (
     SeededRandomIdGenerator,
@@ -1145,7 +1141,6 @@ class LogfireConfig(_LogfireConfigData):
                             TELEMETRY_HEADER_NAME: telemetry_header_value,
                         }
                         session = OTLPExporterHttpSession()
-                        install_logfire_response_hook(session)
                         span_exporter = BodySizeCheckingOTLPSpanExporter(
                             endpoint=urljoin(base_url, '/v1/traces'),
                             session=session,
@@ -1472,11 +1467,9 @@ class LogfireConfig(_LogfireConfigData):
             )
 
     def _initialize_credentials_from_token(self, token: str) -> LogfireCredentials | None:
-        session = requests.Session()
-        install_logfire_response_hook(session)
         return LogfireCredentials.from_token(
             token,
-            session,
+            requests.Session(),
             self.advanced.generate_base_url(token),
             telemetry_header=build_telemetry_header(self),
         )

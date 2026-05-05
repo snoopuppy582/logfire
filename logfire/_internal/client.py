@@ -10,11 +10,7 @@ from logfire.exceptions import LogfireConfigError
 from logfire.version import VERSION
 
 from .auth import UserToken, UserTokenCollection
-from .telemetry_header import (
-    TELEMETRY_HEADER_NAME,
-    build_telemetry_header,
-    install_logfire_response_hook,
-)
+from .telemetry_header import TELEMETRY_HEADER_NAME, build_telemetry_header
 from .utils import UnexpectedResponse
 
 UA_HEADER = f'logfire/{VERSION}'
@@ -49,7 +45,6 @@ class LogfireClient:
                 TELEMETRY_HEADER_NAME: build_telemetry_header(),
             }
         )
-        install_logfire_response_hook(self._session)
 
     @classmethod
     def from_url(cls, base_url: str | None) -> Self:

@@ -1,17 +1,10 @@
-"""SDK <-> server out-of-band metadata exchanged via custom HTTP headers.
+"""Build the `X-Logfire-Telemetry` request header.
 
-* `X-Logfire-Telemetry` (request): non-sensitive information about the SDK and how
-  it is configured, encoded as a compact JSON object. Used by the backend to
-  answer questions like which SDK versions are still in active use, which Python
-  versions we can drop, and which configuration options users actually enable.
-  Secrets (`token`, `api_key`, `service_name`, etc.) are never included.
-* `X-Logfire-Warning` (response): an out-of-band warning the server wants the
-  user to see. Surfaced via `warnings.warn(...)`; the standard "default" filter
-  deduplicates identical messages so a chatty server only warns once.
-* `X-Logfire-Error` (response): an out-of-band error the server wants the SDK
-  to raise. Always raised — callers that want to keep working past it (the OTLP
-  pipeline, the variables provider) already swallow exceptions from their HTTP
-  calls.
+The header carries non-sensitive information about the SDK and how it is
+configured, encoded as a compact JSON object. The backend uses it to answer
+questions like which SDK versions are still in active use, which Python
+versions we can drop, and which configuration options users actually enable.
+Secrets (`token`, `api_key`, `service_name`, etc.) are never included.
 """
 
 from __future__ import annotations
@@ -19,12 +12,8 @@ from __future__ import annotations
 import functools
 import json
 import sys
-import warnings
 from typing import TYPE_CHECKING, Any
 
-import requests
-
-from logfire.exceptions import LogfireServerError, LogfireServerWarning
 from logfire.version import VERSION
 
 if TYPE_CHECKING:
@@ -32,8 +21,6 @@ if TYPE_CHECKING:
 
 
 TELEMETRY_HEADER_NAME = 'X-Logfire-Telemetry'
-WARNING_HEADER_NAME = 'X-Logfire-Warning'
-ERROR_HEADER_NAME = 'X-Logfire-Error'
 
 
 @functools.cache
@@ -102,28 +89,3 @@ def build_telemetry_header(config: LogfireConfig | None = None) -> str:
     if config is not None:
         pairs.update(_config_telemetry_pairs(config))
     return json.dumps(pairs, separators=(',', ':'))
-
-
-def process_logfire_response_headers(response: requests.Response, *_args: Any, **_kwargs: Any) -> requests.Response:
-    """Handle `X-Logfire-Warning` / `X-Logfire-Error` headers on a Logfire API response.
-
-    Designed to be installed as a `requests` response hook
-    (`session.hooks['response'].append(...)`).
-    """
-    warning_message = response.headers.get(WARNING_HEADER_NAME)
-    if warning_message:
-        warnings.warn(warning_message, LogfireServerWarning, stacklevel=2)
-    error_message = response.headers.get(ERROR_HEADER_NAME)
-    if error_message:
-        raise LogfireServerError(error_message)
-    return response
-
-
-def install_logfire_response_hook(session: requests.Session) -> None:
-    """Install `process_logfire_response_headers` as a response hook on `session`.
-
-    `requests.Session()` always initialises `hooks['response']` to a list, and every
-    call site here passes a freshly-built session, so we just append.
-    """
-    response_hooks: list[Any] = session.hooks.setdefault('response', [])
-    response_hooks.append(process_logfire_response_headers)

@@ -17,11 +17,7 @@ from requests import RequestException, Session
 
 from logfire._internal.client import UA_HEADER
 from logfire._internal.config import VariablesOptions
-from logfire._internal.telemetry_header import (
-    TELEMETRY_HEADER_NAME,
-    build_telemetry_header,
-    install_logfire_response_hook,
-)
+from logfire._internal.telemetry_header import TELEMETRY_HEADER_NAME, build_telemetry_header
 from logfire._internal.utils import UnexpectedResponse
 from logfire.variables.abstract import (
     ResolvedVariable,
@@ -85,7 +81,6 @@ class LogfireRemoteVariableProvider(VariableProvider):
                 TELEMETRY_HEADER_NAME: self._telemetry_header,
             }
         )
-        install_logfire_response_hook(self._session)
         self._timeout = options.timeout
         self._block_before_first_fetch = block_before_first_resolve
         self._polling_interval: timedelta = (
@@ -215,7 +210,6 @@ class LogfireRemoteVariableProvider(VariableProvider):
                             'Cache-Control': 'no-cache',
                         }
                     )
-                    install_logfire_response_hook(sse_session)
 
                     # Open streaming connection
                     response = sse_session.get(sse_url, stream=True, timeout=(10, None))
