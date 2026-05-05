@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import warnings
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -21,8 +23,8 @@ from logfire.exceptions import LogfireServerError, LogfireServerWarning
 from logfire.version import VERSION
 
 
-def _parse_header(value: str) -> dict[str, str]:
-    return dict(part.split('=', 1) for part in value.split(','))
+def _parse_header(value: str) -> dict[str, Any]:
+    return json.loads(value)
 
 
 def test_build_telemetry_header_without_config():
@@ -30,7 +32,7 @@ def test_build_telemetry_header_without_config():
     assert pairs['sdk_version'] == VERSION
     assert pairs['sdk_language'] == 'python'
     assert pairs['python_version']
-    assert pairs['runtime']
+    assert pairs['implementation']
     assert pairs['os']
 
 
@@ -90,7 +92,7 @@ def test_otlp_export_sends_telemetry_header():
     [headers] = [headers for headers in captured if TELEMETRY_HEADER_NAME in headers]
     pairs = _parse_header(headers[TELEMETRY_HEADER_NAME])
     assert pairs['sdk_version'] == VERSION
-    assert pairs['token_count'] == '1'
+    assert pairs['token_count'] == 1
     assert 'abc1' not in headers[TELEMETRY_HEADER_NAME]
     # The header must advertise the same `service.instance.id` carried by OTLP
     # resource attributes so the backend can correlate the two.
@@ -106,10 +108,10 @@ def test_from_token_sends_telemetry_header():
         )
         session = requests.Session()
         LogfireCredentials.from_token(
-            'pylf_v1_us_xxx', session, 'https://logfire-us.pydantic.dev', telemetry_header='sdk_version=1.2.3'
+            'pylf_v1_us_xxx', session, 'https://logfire-us.pydantic.dev', telemetry_header='{"sdk_version":"1.2.3"}'
         )
         [history] = m.request_history
-        assert history.headers[TELEMETRY_HEADER_NAME] == 'sdk_version=1.2.3'
+        assert history.headers[TELEMETRY_HEADER_NAME] == '{"sdk_version":"1.2.3"}'
 
 
 def test_process_response_warning_header_emits_warning():

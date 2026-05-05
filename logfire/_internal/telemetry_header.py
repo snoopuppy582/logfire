@@ -1,10 +1,10 @@
 """SDK <-> server out-of-band metadata exchanged via custom HTTP headers.
 
 * `X-Logfire-Telemetry` (request): non-sensitive information about the SDK and how
-  it is configured. Used by the backend to answer questions like which SDK
-  versions are still in active use, which Python versions we can drop, and which
-  configuration options users actually enable. Secrets (`token`, `api_key`,
-  `service_name`, etc.) are never included.
+  it is configured, encoded as a compact JSON object. Used by the backend to
+  answer questions like which SDK versions are still in active use, which Python
+  versions we can drop, and which configuration options users actually enable.
+  Secrets (`token`, `api_key`, `service_name`, etc.) are never included.
 * `X-Logfire-Warning` (response): an out-of-band warning the server wants the
   user to see. Surfaced via `warnings.warn(...)`; the standard "default" filter
   deduplicates identical messages so a chatty server only warns once.
@@ -16,7 +16,8 @@
 
 from __future__ import annotations
 
-import platform
+import functools
+import json
 import sys
 import warnings
 from typing import TYPE_CHECKING, Any
@@ -35,13 +36,8 @@ WARNING_HEADER_NAME = 'X-Logfire-Warning'
 ERROR_HEADER_NAME = 'X-Logfire-Error'
 
 
-def _format_value(value: object) -> str:
-    if isinstance(value, bool):
-        return 'true' if value else 'false'
-    return str(value)
-
-
-def _base_telemetry_pairs() -> dict[str, str]:
+@functools.cache
+def _base_telemetry_pairs() -> dict[str, Any]:
     # Each field below has an explicit rationale; do not add a field unless you have one.
     return {
         # SDK version: the primary signal for deprecation planning — which versions
@@ -51,17 +47,17 @@ def _base_telemetry_pairs() -> dict[str, str]:
         # from future SDKs (JS, Rust) without having to parse User-Agent.
         'sdk_language': 'python',
         # Python version: tells us when we can drop support for an older Python.
-        'python_version': platform.python_version(),
-        # Runtime: spotting non-CPython users (pypy, graalpy) before changing
-        # anything that depends on CPython-specific behaviour.
-        'runtime': sys.implementation.name,
+        'python_version': f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}',
+        # Implementation: spotting non-CPython users (pypy, graalpy) before
+        # changing anything that depends on CPython-specific behaviour.
+        'implementation': sys.implementation.name,
         # OS: same idea — confirm Windows / Linux / macOS coverage before
         # touching platform-sensitive code paths.
         'os': sys.platform,
     }
 
 
-def _config_telemetry_pairs(config: LogfireConfig) -> dict[str, str]:
+def _config_telemetry_pairs(config: LogfireConfig) -> dict[str, Any]:
     """Pick fields of `LogfireConfig` that are useful for product analytics.
 
     Each field below has an explicit rationale; do not add a field unless you have
@@ -69,16 +65,6 @@ def _config_telemetry_pairs(config: LogfireConfig) -> dict[str, str]:
     isn't actionable, or risks leaking sensitive data (token, api_key,
     service_name, environment, etc.).
     """
-    pairs: dict[str, str] = {}
-
-    # Adoption signal for the `code_source=` option (newer feature): tells us
-    # whether the integration with the source-code link UI is worth investing in.
-    pairs['code_source_set'] = _format_value(config.code_source is not None)
-
-    # Adoption signal for the variables / feature-flag feature (newer feature):
-    # informs whether to keep building on it.
-    pairs['variables_set'] = _format_value(config.variables is not None)
-
     # Multi-project usage: how many users configure more than one write token in
     # a single SDK instance. Drives auth/routing roadmap decisions.
     token = config.token
@@ -88,7 +74,16 @@ def _config_telemetry_pairs(config: LogfireConfig) -> dict[str, str]:
         token_count = 1
     else:
         token_count = 0
-    pairs['token_count'] = _format_value(token_count)
+
+    pairs: dict[str, Any] = {
+        # Adoption signal for the `code_source=` option (newer feature): tells us
+        # whether the integration with the source-code link UI is worth investing in.
+        'code_source_set': config.code_source is not None,
+        # Adoption signal for the variables / feature-flag feature (newer feature):
+        # informs whether to keep building on it.
+        'variables_set': config.variables is not None,
+        'token_count': token_count,
+    }
 
     if config._service_instance_id:  # pyright: ignore[reportPrivateUsage]
         # Mirrors the OTLP resource attribute of the same name
@@ -102,11 +97,11 @@ def _config_telemetry_pairs(config: LogfireConfig) -> dict[str, str]:
 
 
 def build_telemetry_header(config: LogfireConfig | None = None) -> str:
-    """Return the `key=val,key2=val` value for the `X-Logfire-Telemetry` header."""
-    pairs = _base_telemetry_pairs()
+    """Return the JSON-encoded value for the `X-Logfire-Telemetry` header."""
+    pairs: dict[str, Any] = {**_base_telemetry_pairs()}
     if config is not None:
         pairs.update(_config_telemetry_pairs(config))
-    return ','.join(f'{key}={value}' for key, value in pairs.items())
+    return json.dumps(pairs, separators=(',', ':'))
 
 
 def process_logfire_response_headers(response: requests.Response, *_args: Any, **_kwargs: Any) -> requests.Response:
