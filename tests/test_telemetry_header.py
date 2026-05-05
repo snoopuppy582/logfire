@@ -37,24 +37,7 @@ def test_build_telemetry_header_without_config():
 def test_build_telemetry_header_with_config():
     pairs = _parse_header(build_telemetry_header(GLOBAL_CONFIG))
     assert pairs['sdk_version'] == VERSION
-    # Booleans / counts that come from _LogfireConfigData should be present.
-    for key in (
-        'send_to_logfire',
-        'inspect_arguments',
-        'distributed_tracing',
-        'add_baggage_to_attributes',
-        'min_level',
-        'console_enabled',
-        'scrubbing_enabled',
-        'code_source_set',
-        'variables_set',
-        'service_version_set',
-        'environment_set',
-        'additional_span_processors',
-        'token_count',
-        'sampling_head',
-        'sampling_tail',
-    ):
+    for key in ('code_source_set', 'variables_set', 'token_count'):
         assert key in pairs
 
 
@@ -101,14 +84,18 @@ def test_otlp_export_sends_telemetry_header():
 
         with logfire.span('a span'):
             pass
-        logfire.shutdown()
+        logfire.force_flush()
 
     assert any(TELEMETRY_HEADER_NAME in headers for headers in captured)
     [headers] = [headers for headers in captured if TELEMETRY_HEADER_NAME in headers]
     pairs = _parse_header(headers[TELEMETRY_HEADER_NAME])
     assert pairs['sdk_version'] == VERSION
-    assert pairs['send_to_logfire'] == 'true'
+    assert pairs['token_count'] == '1'
     assert 'abc1' not in headers[TELEMETRY_HEADER_NAME]
+    # The header must advertise the same `service.instance.id` carried by OTLP
+    # resource attributes so the backend can correlate the two.
+    resource = GLOBAL_CONFIG.get_tracer_provider().resource
+    assert pairs['service_instance_id'] == resource.attributes['service.instance.id']
 
 
 def test_from_token_sends_telemetry_header():

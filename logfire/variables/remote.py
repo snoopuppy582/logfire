@@ -59,20 +59,24 @@ class LogfireRemoteVariableProvider(VariableProvider):
     The threading implementation draws heavily from opentelemetry.sdk._shared_internal.BatchProcessor.
     """
 
-    def __init__(self, base_url: str, token: str, options: VariablesOptions):
+    def __init__(self, base_url: str, token: str, options: VariablesOptions, telemetry_header: str | None = None):
         """Create a new remote variable provider.
 
         Args:
             base_url: The base URL of the Logfire API.
             token: Authentication token for the Logfire API.
             options: Options for retrieving remote variables.
+            telemetry_header: Pre-built `X-Logfire-Telemetry` header value carrying the
+                SDK's `service.instance.id` so it matches the OTLP resource attribute.
+                When None (e.g. lazily instantiated outside of `_initialize`), a base
+                header without config-derived fields is built here.
         """
         block_before_first_resolve = options.block_before_first_resolve
         polling_interval = options.polling_interval
 
         self._base_url = base_url
         self._token = token
-        self._telemetry_header = build_telemetry_header()
+        self._telemetry_header = telemetry_header if telemetry_header is not None else build_telemetry_header()
         self._session = Session()
         self._session.headers.update(
             {

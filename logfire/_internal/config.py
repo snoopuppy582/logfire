@@ -892,6 +892,9 @@ class LogfireConfig(_LogfireConfigData):
         # This ensures that we only call OTEL's global set_tracer_provider once to avoid warnings.
         self._has_set_providers = False
         self._initialized = False
+        # Resolved in `_initialize` once the resource (and therefore its `service.instance.id`)
+        # exists; until then there is no value to advertise to the backend.
+        self._service_instance_id: str = ''
         self._lock = RLock()
 
     def configure(
@@ -1001,6 +1004,9 @@ class LogfireConfig(_LogfireConfigData):
             # https://github.com/open-telemetry/semantic-conventions/blob/e44693245eef815071402b88c3a44a8f7f8f24c8/docs/resource/README.md#service-experimental
             # Both recommend generating a UUID.
             resource = Resource({'service.instance.id': uuid4().hex}).merge(resource)
+            # Cache the resolved service.instance.id so the X-Logfire-Telemetry header
+            # advertises the same UUID the OTLP resource attributes carry.
+            self._service_instance_id = str(resource.attributes.get('service.instance.id', ''))
 
             head = self.sampling.head
             sampler: Sampler | None = None
@@ -1130,7 +1136,7 @@ class LogfireConfig(_LogfireConfigData):
                         thread.start()
 
                     # Create exporters for each token
-                    telemetry_header_value = build_telemetry_header(self)
+                    telemetry_header_value = build_telemetry_header(self, service_instance_id=self._service_instance_id)
                     for token in token_list:
                         base_url = self.advanced.generate_base_url(token)
                         headers = {
@@ -1316,6 +1322,7 @@ class LogfireConfig(_LogfireConfigData):
                     base_url=base_url,
                     token=self.api_key,
                     options=self.variables,
+                    telemetry_header=build_telemetry_header(self, service_instance_id=self._service_instance_id),
                 )
             multi_log_processor = SynchronousMultiLogRecordProcessor()
             for processor in log_record_processors:
@@ -1448,6 +1455,7 @@ class LogfireConfig(_LogfireConfigData):
                 base_url=base_url,
                 token=api_key,
                 options=options,
+                telemetry_header=build_telemetry_header(self, service_instance_id=self._service_instance_id),
             )
             self._variable_provider = provider
             provider.start(Logfire(config=self))
@@ -1467,7 +1475,10 @@ class LogfireConfig(_LogfireConfigData):
         session = requests.Session()
         install_logfire_response_hook(session)
         return LogfireCredentials.from_token(
-            token, session, self.advanced.generate_base_url(token), telemetry_header=build_telemetry_header(self)
+            token,
+            session,
+            self.advanced.generate_base_url(token),
+            telemetry_header=build_telemetry_header(self, service_instance_id=self._service_instance_id),
         )
 
     def _ensure_flush_after_aws_lambda(self):
