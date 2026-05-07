@@ -106,7 +106,7 @@ from .integrations.executors import instrument_executors
 from .logs import ProxyLoggerProvider
 from .metrics import ProxyMeterProvider
 from .scrubbing import NOOP_SCRUBBER, BaseScrubber, Scrubber, ScrubbingOptions
-from .server_response import TransportResponseHook, install_logfire_response_hook
+from .server_response import ServerResponseCallback, install_logfire_response_hook
 from .stack_info import warn_at_user_stacklevel
 from .tracer import OPEN_SPANS, PendingSpanProcessor, ProxyTracerProvider
 from .utils import (
@@ -202,7 +202,7 @@ class AdvancedOptions:
     serialized configuration sent to child processes. See the [distributed tracing guide](https://logfire.pydantic.dev/docs/how-to-guides/distributed-tracing/#thread-and-pool-executors) for more details.
     """
 
-    transport_response_hook: TransportResponseHook | None = None
+    transport_response_hook: ServerResponseCallback | None = None
     """Optional callback invoked for every HTTP response received from the Logfire API.
 
     This applies to OTLP exports, credential / project initialisation, and the remote
